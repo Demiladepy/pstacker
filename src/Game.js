@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import { gsap } from 'gsap';
 import { DisasterManager } from './DisasterManager.js';
+import { JuiceManager } from './JuiceManager.js';
+import { Materials } from './Materials.js';
 
 export class Game {
     constructor() {
@@ -29,6 +31,11 @@ export class Game {
 
         // Systems
         this.disasterManager = new DisasterManager(this);
+        this.juiceManager = new JuiceManager(this);
+
+        // Combos
+        this.comboStreak = 0;
+        this.lastBlockPos = { x: 0, z: 0 };
 
         this.loop = this.loop.bind(this);
         this.handleInput = this.handleInput.bind(this);
@@ -52,12 +59,37 @@ export class Game {
         this.world.solver.iterations = 10;
 
         this.defaultMaterial = new CANNON.Material('default');
-        const defaultContactMaterial = new CANNON.ContactMaterial(
-            this.defaultMaterial,
-            this.defaultMaterial,
-            { friction: 0.5, restitution: 0.1 }
-        );
-        this.world.addContactMaterial(defaultContactMaterial);
+
+        // Create Cannon Materials from Dictionary
+        this.materialMap = {};
+        Object.values(Materials).forEach(matDef => {
+            const mat = new CANNON.Material(matDef.name);
+            this.materialMap[matDef.name] = mat;
+
+            // Interaction with Default (Base)
+            this.world.addContactMaterial(new CANNON.ContactMaterial(
+                this.defaultMaterial, mat, { friction: matDef.friction, restitution: matDef.restitution }
+            ));
+
+            // Interaction with Self
+            this.world.addContactMaterial(new CANNON.ContactMaterial(
+                mat, mat, { friction: matDef.friction, restitution: matDef.restitution }
+            ));
+
+            // Interaction with Others (Generic mix)
+            Object.values(Materials).forEach(otherDef => {
+                if (otherDef.name !== matDef.name) {
+                    // Average
+                    const friction = (matDef.friction + otherDef.friction) / 2;
+                    const restitution = (matDef.restitution + otherDef.restitution) / 2;
+                    const otherMat = this.materialMap[otherDef.name] || new CANNON.Material(otherDef.name); // Should exist by 2nd pass or lazy
+                    // To avoid duplicates, we could loop carefully, but Cannon handles overwrites or we just do simple Pair?
+                    // Let's just do Default contact for now for simplicity, or specific if matches.
+                    // Actually, Cannon needs explicit contacts or falls back to defaults.
+                    // Let's just ensure Self and Default are tuned. Complex interactions can fallback.
+                }
+            });
+        });
     }
 
     setupGraphics() {
@@ -136,6 +168,26 @@ export class Game {
 
         // Store
         const block = { mesh, body, initialY: y };
+
+        // Collision Listener for Juice
+        body.addEventListener("collide", (e) => {
+            const relativeVelocity = e.contact.getImpactVelocityAlongNormal();
+            if (Math.abs(relativeVelocity) > 1) {
+                // Audio
+                const isSteel = body.material.name === 'steel';
+                if (isSteel) this.juiceManager.playClank();
+                else this.juiceManager.playThud(this.comboStreak);
+
+                // Particles
+                this.juiceManager.spawnCollisionParticles(e.contact.bj.position, mesh.material.color);
+
+                // Shake (if heavy impact)
+                if (Math.abs(relativeVelocity) > 5) {
+                    this.juiceManager.shakeScreen(0.5);
+                }
+            }
+        });
+
         this.blocks.push(block);
         return block;
     }
@@ -166,13 +218,25 @@ export class Game {
         this.hue += 0.05;
         if (this.hue > 1) this.hue = 0;
 
+        // Pick Material (Random or based on level)
+        let matDef = Materials.WOOD;
+        const rand = Math.random();
+        if (rand > 0.9) matDef = Materials.RUBBER;
+        else if (rand > 0.8) matDef = Materials.ICE;
+        else if (rand > 0.7) matDef = Materials.STEEL;
+
+        // Force heavy event override
+        let finalMass = mass * matDef.massMult;
+
         // Spawn
         const axis = this.score % 2 === 0 ? 'x' : 'z';
         const spawnX = axis === 'x' ? -10 : 0;
         const spawnZ = axis === 'z' ? -10 : 0;
 
-        // Kinematic for now (controlled manually)
-        const block = this.createBlock(spawnX, y, spawnZ, scale.x, this.blockHeight, scale.z, 0);
+        // Create
+        const block = this.createBlock(spawnX, y, spawnZ, scale.x, this.blockHeight, scale.z, 0, new THREE.Color(matDef.color));
+        block.body.material = this.materialMap[matDef.name];
+        block.matDef = matDef; // Store for later
 
         this.currentBlock = block;
         this.currentBlock.oscillate = {
@@ -183,7 +247,7 @@ export class Game {
         };
 
         // Mass for later
-        this.currentBlock.targetMass = mass;
+        this.currentBlock.targetMass = finalMass;
     }
 
     startGame() {
@@ -224,6 +288,9 @@ export class Game {
         if (e.target.closest('button')) return;
         if (!this.currentBlock || !this.currentBlock.oscillate) return;
 
+        // Capture axis before nulling
+        const osAxis = this.currentBlock.oscillate.axis;
+
         // Drop
         this.currentBlock.oscillate = null;
         this.currentBlock.body.mass = this.currentBlock.targetMass;
@@ -232,7 +299,42 @@ export class Game {
         this.currentBlock.body.velocity.set(0, -10, 0);
         this.currentBlock.body.wakeUp(); // Ensure awake
 
+        // Combo Check
+        const prevBlock = this.blocks[this.blocks.length - 2];
+        const prevPos = prevBlock ? prevBlock.body.position : new CANNON.Vec3(0, 0, 0);
+        const currentPos = this.currentBlock.body.position;
+
+        const dist = osAxis === 'x'
+            ? Math.abs(prevPos.x - currentPos.x)
+            : Math.abs(prevPos.z - currentPos.z);
+
+        if (dist < 0.5) {
+            this.comboStreak++;
+            this.showComboText();
+            this.juiceManager.playThud(this.comboStreak + 2);
+
+            if (this.comboStreak >= 3) {
+                // Safety net? Or just bonus points?
+                this.score += 5; // Bonus
+                this.uiScore.innerText = this.score;
+            }
+        } else {
+            this.comboStreak = 0;
+        }
+
         this.checkStability();
+    }
+
+    showComboText() {
+        const el = document.getElementById('combo-text');
+        if (el) {
+            el.innerText = `PERFECT! x${this.comboStreak}`;
+            el.style.opacity = '1';
+            el.style.transform = 'translate(-50%, -50%) scale(1.5)';
+            gsap.to(el.style, { opacity: 0, scale: 1, duration: 1, ease: "power2.out" });
+        } else {
+            // Create lazily if not exists (though better to have in HTML)
+        }
     }
 
     checkStability() {
@@ -263,8 +365,39 @@ export class Game {
         if (this.gameState === 'GAMEOVER') return;
         this.gameState = 'GAMEOVER';
         this.setScreen('gameOver');
-        document.getElementById('final-score').innerText = this.score;
-        document.getElementById('final-height').innerText = Math.floor(this.score * this.blockHeight) + 'm';
+
+        const finalScore = this.score;
+        document.getElementById('final-score').innerText = finalScore;
+        const heightVal = Math.floor(finalScore * this.blockHeight);
+        document.getElementById('final-height').innerText = heightVal + 'm';
+
+        // Certificate Logic
+        let grade = "F - Absolute Hazard";
+        if (finalScore > 5) grade = "C - Barely Standing";
+        if (finalScore > 15) grade = "B - Surprisingly Stable";
+        if (finalScore > 30) grade = "A - Master Architect";
+
+        // Inject Certificate HTML if not present or update it
+        let cert = document.getElementById('cert-grade');
+        if (!cert) {
+            const container = document.getElementById('game-over-screen');
+            cert = document.createElement('h2');
+            cert.id = 'cert-grade';
+            cert.style.color = '#ffff00';
+            cert.style.textShadow = '0 0 10px orange';
+            cert.style.marginTop = '20px';
+            container.insertBefore(cert, document.getElementById('restart-btn'));
+        }
+        cert.innerText = `Certification: ${grade}`;
+
+        // High Score
+        const savedHigh = localStorage.getItem('pstacker_highscore') || 0;
+        if (finalScore > savedHigh) {
+            localStorage.setItem('pstacker_highscore', finalScore);
+            cert.innerText += " (NEW RECORD!)";
+        } else {
+            cert.innerText += ` (Best: ${savedHigh})`;
+        }
     }
 
     updatePhysics(dt) {

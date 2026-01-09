@@ -1,50 +1,55 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>P-Stacker: The Unlicensed Civil Engineer</title>
-    <link rel="stylesheet" href="./style.css" />
-  </head>
-  <body>
-    <div id="ui-layer">
-      <div id="start-screen" class="screen active">
-        <h1 class="title">P-STACKER</h1>
-        <p class="subtitle">The Unlicensed Civil Engineer</p>
-        <button id="start-btn" class="btn primary">Start Construction</button>
-      </div>
 
-      <div id="game-ui" class="screen">
-        <div class="hud-top">
-          <div class="score-container">
-            <span class="label">Floor</span>
-            <span id="score">0</span>
-          </div>
-          <div class="height-container">
-            <span class="label">Height</span>
-            <span id="height">0m</span>
-          </div>
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>P-Stacker: The Unlicensed Civil Engineer</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+
+<body>
+  <div id="ui-layer">
+    <div id="start-screen" class="screen active">
+      <h1 class="title">P-STACKER</h1>
+      <p class="subtitle">The Unlicensed Civil Engineer</p>
+      <button id="start-btn" class="btn primary">Start Construction</button>
+    </div>
+
+    <div id="game-ui" class="screen">
+      <div class="hud-top">
+        <div class="score-container">
+          <span class="label">Floor</span>
+          <span id="score">0</span>
         </div>
-        
-        <div id="chaos-announcement" class="chaos-popup hidden">
-          <h2 id="chaos-title">EARTHQUAKE!</h2>
-          <p id="chaos-desc">The ground is shaking!</p>
+        <div class="height-container">
+          <span class="label">Height</span>
+          <span id="height">0m</span>
         </div>
       </div>
 
-      <div id="game-over-screen" class="screen">
-        <h1 class="title">CATASTROPHE!</h1>
-        <div class="stats">
-          <p>Floors Built: <span id="final-score">0</span></p>
-          <p>Max Height: <span id="final-height">0m</span></p>
-        </div>
-        <button id="restart-btn" class="btn primary">Try Again</button>
+      <div id="chaos-announcement" class="chaos-popup hidden">
+        <h2 id="chaos-title">EARTHQUAKE!</h2>
+        <p id="chaos-desc">The ground is shaking!</p>
       </div>
     </div>
-    
-    <div id="canvas-container"></div>
-    
-    <script type="module" src="/src/main.js"></script>
-  </body>
+
+    <div id="game-over-screen" class="screen">
+      <h1 class="title">CATASTROPHE!</h1>
+      <div class="stats">
+        <p>Floors Built: <span id="final-score">0</span></p>
+        <p>Max Height: <span id="final-height">0m</span></p>
+      </div>
+      <button id="restart-btn" class="btn primary">Try Again</button>
+    </div>
+
+    <div id="combo-text"></div>
+  </div>
+
+  <div id="canvas-container"></div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+
 </html>
