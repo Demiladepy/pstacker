@@ -1,22 +1,22 @@
-# pstacker - The Unlicensed Civil Engineer 🏗️💥
+# pstacker - The Unlicensed Civil Engineer 
 
 > *"I skipped my Statics class, but I have a hard hat. Trust me."*
 
 **P-Stacker** (The Unlicensed Civil Engineer) is a chaotic 3D physics stacking game built for the browser. It combines satisfying tower building with unpredictable "Disaster Events" to test your ability to build under pressure.
 
-## 🎮 Play Now
+##  Play Now
 (If you have a live demo link, add it here. Otherwise: Clone and run locally!)
 
-## ✨ Features
+##  Features
 
-### 🏗️ Physics-Based Stacking
+###  Physics-Based Stacking
 Build your skyscraper using a variety of materials, each with unique physical properties powered by **Cannon.js**:
 - **Wood**: Reliable, standard friction.
-- **Ice ❄️**: Slippery! Blocks slide off easily.
-- **Rubber 🎾**: High bounciness—watch out for rebounds.
-- **Steel 🔩**: Heavy and solid, but creates massive impact forces.
+- **Ice**: Slippery! Blocks slide off easily.
+- **Rubber**: High bounciness—watch out for rebounds.
+- **Steel**: Heavy and solid, but creates massive impact forces.
 
-### 🌪️ Chaos System (The "Wheel of Misfortune")
+### Chaos System (The "Wheel of Misfortune")
 Every 5th block, a random disaster strikes:
 - **Wind**: A strong gust pushes your tower sideways.
 - **Earthquake**: The ground shakes, destabilizing weak structures.
@@ -24,19 +24,19 @@ Every 5th block, a random disaster strikes:
 - **The Glitch**: The camera feeds invert. Left is Right. Up is... who knows?
 - **Sudden Death**: The base platform shrinks.
 
-### 🥤 "Game Juice" & Polish
+###  "Game Juice" & Polish
 - **Dynamic Audio**: Synthesized sound effects that pitch-shift upwards as you build a combo streak.
 - **Satisfying Visuals**: Neon "Toy/Premium" aesthetic with particle explosions on collision.
 - **Screen Shake**: Feel the impact of heavy blocks.
 
-### 🏆 Social Engineering
+###  Social Engineering
 - **Certification System**: Get graded on your performance!
     - **F**: Absolute Hazard
     - **C**: Barely Standing
     - **A**: Master Architect
 - **Local High Scores**: Compete against yourself (and your friends).
 
-## 🛠️ Tech Stack
+##  Tech Stack
 
 - **Engine**: [Three.js](https://threejs.org/) (3D Rendering)
 - **Physics**: [Cannon-es](https://github.com/pmndrs/cannon-es) (Rigid Body Physics)
@@ -44,7 +44,7 @@ Every 5th block, a random disaster strikes:
 - **Build Tool**: [Vite](https://vitejs.dev/)
 - **Audio**: Web Audio API (Synthesized procedurally)
 
-## 🚀 How to Run Locally
+##  How to Run Locally
 
 1. **Clone the repository**
    ```bash
@@ -63,12 +63,12 @@ Every 5th block, a random disaster strikes:
    ```
    Open `http://localhost:5173` (or the port shown in terminal).
 
-## 🕹️ Controls
+##  Controls
 
 - **Mouse/Tap**: Click anytime to **DROP** the block.
 - **Goal**: Stack as high as possible without toppling the tower.
 
-## 📝 License
+##  License
 
 Unlicensed (Just like the Engineer). 
 *Actually, MIT.*
