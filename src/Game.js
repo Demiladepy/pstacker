@@ -8,6 +8,9 @@ import { AudioSystem } from './AudioSystem.js';
 import { ParticleSystem } from './ParticleSystem.js';
 import { PostProcessing } from './PostProcessing.js';
 
+import { SmartCamera } from './SmartCamera.js';
+import { ProgressionSystem } from './ProgressionSystem.js';
+
 export class Game {
     constructor() {
         this.container = document.getElementById('canvas-container');
@@ -23,7 +26,7 @@ export class Game {
         this.blocks = [];
         this.currentBlock = null;
         this.stackHeight = 0;
-        this.score = 0;
+        this.floorCount = 0;
         this.gameState = 'START';
 
         // Settings
@@ -141,6 +144,12 @@ export class Game {
 
         // Post Processing
         this.postProcessing = new PostProcessing(this);
+
+        // Smart Camera
+        this.smartCamera = new SmartCamera(this);
+
+        // Progression
+        this.progression = new ProgressionSystem();
     }
 
     setupUI() {
@@ -153,8 +162,8 @@ export class Game {
         document.addEventListener('mousedown', this.handleInput);
         document.addEventListener('touchstart', (e) => { e.preventDefault(); this.handleInput(e); }, { passive: false });
 
-        this.uiScore = document.getElementById('score');
-        this.uiHeight = document.getElementById('height');
+        this.uiFloor = document.getElementById('ui-floor');
+        this.uiScore = document.getElementById('ui-score');
 
         this.screens = {
             start: document.getElementById('start-screen'),
@@ -229,6 +238,27 @@ export class Game {
             }
         }
 
+
+        // Skin Overrides
+        const skin = this.progression ? this.progression.getActiveSkin() : 'default';
+        if (skin === 'gold') {
+            material = new THREE.MeshStandardMaterial({
+                color: 0xFFD700,
+                metalness: 1.0,
+                roughness: 0.1,
+                envMapIntensity: 1.0
+            });
+        }
+        if (skin === 'neon') {
+            material.emissive = material.color;
+            material.emissiveIntensity = 0.5;
+        }
+        if (skin === 'matrix') {
+            material.wireframe = true;
+            material.color.setHex(0x00ff00);
+            material.emissive = new THREE.Color(0x00ff00);
+        }
+
         const mesh = new THREE.Mesh(geometry, material);
         mesh.castShadow = true;
         mesh.receiveShadow = true;
@@ -253,8 +283,7 @@ export class Game {
 
                 // Shake (if heavy impact)
                 if (Math.abs(relativeVelocity) > 5) {
-                    // Simple shake implementation or use camera system later
-                    // this.camera.position.x += Math.random() * 0.5; // very naive
+                    this.smartCamera.triggerShake(Math.abs(relativeVelocity) * 0.05);
                 }
             }
         });
@@ -381,7 +410,7 @@ export class Game {
         this.blocks.pop(); // Remove from tracking
 
         // Undo score
-        this.score--;
+        this.floorCount--;
 
         if (this.holdBlockParams) {
             // Swap
@@ -408,9 +437,12 @@ export class Game {
         this.setScreen('game');
         this.gameState = 'PLAYING';
         this.scoreSystem.reset();
-        this.score = 0;
+        this.floorCount = 0;
         this.resetScene();
         this.spawnNextBlock();
+
+        // Audio
+        this.audioSystem.startAmbience();
     }
 
     resetGame() {
@@ -466,6 +498,7 @@ export class Game {
 
         const result = this.scoreSystem.registerDrop(dist);
         this.uiScore.innerText = result.totalScore;
+        this.comboStreak = result.combo; // Update combo state for effects
 
         // Feedback
         this.showPlacementFeedback(result);
@@ -474,6 +507,7 @@ export class Game {
         if (result.placement.name === 'PERFECT') {
             this.audioSystem.playSuccess(result.combo);
             this.particleSystem.emitSuccess(this.currentBlock.mesh.position);
+            this.smartCamera.pulseZoom();
         } else {
             this.audioSystem.playImpact(this.currentBlock.matDef, 5); // Simple thud
         }
@@ -524,10 +558,11 @@ export class Game {
         this.gameState = 'GAMEOVER';
         this.setScreen('gameOver');
 
-        const finalScore = this.score;
-        document.getElementById('final-score').innerText = finalScore;
-        const heightVal = Math.floor(finalScore * this.blockHeight);
-        document.getElementById('final-height').innerText = heightVal + 'm';
+        const finalScore = this.scoreSystem.score;
+        const floors = this.floorCount;
+
+        document.getElementById('final-score').innerText = `Floors: ${floors} | Score: ${finalScore}`;
+        document.getElementById('final-height').innerText = ""; // Clear or reuse
 
         // Certificate Logic
         let grade = "F - Absolute Hazard";
@@ -549,12 +584,28 @@ export class Game {
         cert.innerText = `Certification: ${grade}`;
 
         // High Score
-        const savedHigh = localStorage.getItem('pstacker_highscore') || 0;
         if (finalScore > savedHigh) {
             localStorage.setItem('pstacker_highscore', finalScore);
             cert.innerText += " (NEW RECORD!)";
+            // Confetti for high score!
+            if (this.particleSystem) {
+                for (let i = 0; i < 5; i++)
+                    setTimeout(() => this.particleSystem.emitSuccess(new THREE.Vector3(0, (floors * 1) + i * 2, 0)), i * 200);
+            }
         } else {
             cert.innerText += ` (Best: ${savedHigh})`;
+        }
+
+        // Progression
+        const unlocks = this.progression.registerGameEnd(finalScore);
+        if (unlocks.length > 0) {
+            // Show toast or alert?
+            // For now, simple console or append to cert
+            const unlockMsg = document.createElement('div');
+            unlockMsg.style.color = '#00ff00';
+            unlockMsg.style.fontSize = '1.2rem';
+            unlockMsg.innerText = "UNLOCKED: " + unlocks.map(u => u.name).join(', ');
+            document.getElementById('game-over-screen').appendChild(unlockMsg);
         }
     }
 
@@ -589,6 +640,9 @@ export class Game {
         // Particles
         if (this.particleSystem) this.particleSystem.update(dt);
 
+        // Audio Ambience
+        this.audioSystem.updateAmbience(this.floorCount, this.comboStreak);
+
         // Oscillate current block
         if (this.currentBlock && this.currentBlock.oscillate) {
             const os = this.currentBlock.oscillate;
@@ -609,17 +663,7 @@ export class Game {
         }
 
         // Camera Follow
-        if (this.blocks.length > 0) {
-            // Target Y is top of stack + offset
-            // We can assume top of stack is the last spawned block's Y
-            const topY = this.currentBlock ? this.currentBlock.mesh.position.y : (this.blocks.length * this.blockHeight);
-
-            // Target Camera Position
-            const targetCamY = Math.max(20, topY + 15);
-
-            this.camera.position.y += (targetCamY - this.camera.position.y) * 0.05;
-            this.camera.lookAt(0, this.camera.position.y - 15, 0);
-        }
+        if (this.smartCamera) this.smartCamera.update(dt);
     }
 
     handleResize() {
