@@ -74,4 +74,4 @@ Unlicensed (Just like the Engineer).
 *Actually, MIT.*
 
 ---
-*Built with ❤️ (and questionable safety standards) for the Hackathon.*
+
