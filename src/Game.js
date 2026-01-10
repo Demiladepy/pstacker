@@ -2,8 +2,11 @@ import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import { gsap } from 'gsap';
 import { DisasterManager } from './DisasterManager.js';
-import { JuiceManager } from './JuiceManager.js';
 import { Materials } from './Materials.js';
+import { ScoreSystem } from './ScoreSystem.js';
+import { AudioSystem } from './AudioSystem.js';
+import { ParticleSystem } from './ParticleSystem.js';
+import { PostProcessing } from './PostProcessing.js';
 
 export class Game {
     constructor() {
@@ -13,6 +16,7 @@ export class Game {
         this.camera = null;
         this.renderer = null;
         this.timeStep = 1 / 60;
+        this.timeScale = 1.0;
         this.lastCallTime = 0;
 
         // Game State
@@ -31,7 +35,8 @@ export class Game {
 
         // Systems
         this.disasterManager = new DisasterManager(this);
-        this.juiceManager = new JuiceManager(this);
+        this.audioSystem = new AudioSystem();
+        this.scoreSystem = new ScoreSystem();
 
         // Combos
         this.comboStreak = 0;
@@ -40,6 +45,11 @@ export class Game {
         this.loop = this.loop.bind(this);
         this.handleInput = this.handleInput.bind(this);
         this.handleResize = this.handleResize.bind(this);
+
+        // Next/Hold
+        this.nextBlockParams = null;
+        this.holdBlockParams = null;
+        this.canHold = true;
     }
 
     init() {
@@ -94,6 +104,12 @@ export class Game {
 
     setupGraphics() {
         this.scene = new THREE.Scene();
+
+        // Init Particles now that scene exists? Or just init in init()?
+        // I initialized in constructor but scene was null. I must move initialization to init() or here.
+        if (!this.particleSystem) this.particleSystem = new ParticleSystem(this.scene);
+
+        this.scene.background = new THREE.Color(0x1a1a2e);
         this.scene.background = new THREE.Color(0x1a1a2e);
         this.scene.fog = new THREE.Fog(0x1a1a2e, 20, 80);
 
@@ -122,6 +138,9 @@ export class Game {
         this.scene.add(dirLight);
 
         // Background gradient plane? Or just lights.
+
+        // Post Processing
+        this.postProcessing = new PostProcessing(this);
     }
 
     setupUI() {
@@ -142,9 +161,14 @@ export class Game {
             game: document.getElementById('game-ui'),
             gameOver: document.getElementById('game-over-screen')
         };
+
+        // Key listeners for tools/hold
+        document.addEventListener('keydown', (e) => {
+            if (e.key.toLowerCase() === 'h') this.holdBlock();
+        });
     }
 
-    createBlock(x, y, z, width, height, depth, mass, colorInput) {
+    createBlock(x, y, z, width, height, depth, mass, matDefOrColor) {
         const shape = new CANNON.Box(new CANNON.Vec3(width / 2, height / 2, depth / 2));
         const body = new CANNON.Body({ mass: mass, material: this.defaultMaterial });
         body.addShape(shape);
@@ -152,11 +176,59 @@ export class Game {
         this.world.addBody(body);
 
         const geometry = new THREE.BoxGeometry(width, height, depth);
-        // Rounded edges for toy look?
-        // BoxGeometry doesn't support radius. Use RoundedBoxGeometry extension or just box for now.
 
-        const color = colorInput || new THREE.Color().setHSL(this.hue, 0.8, 0.6);
-        const material = new THREE.MeshStandardMaterial({ color: color, roughness: 0.1 });
+        let material;
+        // Determine Material Visuals
+        if (matDefOrColor.isColor) {
+            // Basic Color (e.g. Base platform)
+            material = new THREE.MeshStandardMaterial({ color: matDefOrColor, roughness: 0.5 });
+        } else {
+            // Advanced Material Definition
+            const def = matDefOrColor;
+            const color = new THREE.Color(def.color);
+
+            if (def.name === 'ice') {
+                material = new THREE.MeshPhysicalMaterial({
+                    color: color,
+                    metalness: 0.1,
+                    roughness: 0.1,
+                    transmission: 0.6, // Glass-like
+                    thickness: 1.0,
+                    transparent: true,
+                    opacity: 0.8
+                });
+            } else if (def.name === 'glass') {
+                material = new THREE.MeshPhysicalMaterial({
+                    color: color,
+                    metalness: 0.0,
+                    roughness: 0.0,
+                    transmission: 0.9,
+                    thickness: 0.5,
+                    transparent: true,
+                    opacity: 0.5
+                });
+            } else if (def.name === 'steel') {
+                material = new THREE.MeshStandardMaterial({
+                    color: color,
+                    metalness: 0.9,
+                    roughness: 0.2
+                });
+            } else if (def.name === 'wood') {
+                material = new THREE.MeshStandardMaterial({
+                    color: color,
+                    roughness: 0.8,
+                    metalness: 0.0
+                });
+            } else {
+                // Default (Rubber/Foam)
+                material = new THREE.MeshStandardMaterial({
+                    color: color,
+                    roughness: 0.4,
+                    metalness: 0.0
+                });
+            }
+        }
+
         const mesh = new THREE.Mesh(geometry, material);
         mesh.castShadow = true;
         mesh.receiveShadow = true;
@@ -174,22 +246,56 @@ export class Game {
             const relativeVelocity = e.contact.getImpactVelocityAlongNormal();
             if (Math.abs(relativeVelocity) > 1) {
                 // Audio
-                const isSteel = body.material.name === 'steel';
-                if (isSteel) this.juiceManager.playClank();
-                else this.juiceManager.playThud(this.comboStreak);
+                this.audioSystem.playImpact(block.matDef || Materials.WOOD, Math.abs(relativeVelocity), this.comboStreak);
 
                 // Particles
-                this.juiceManager.spawnCollisionParticles(e.contact.bj.position, mesh.material.color);
+                this.particleSystem.emitImpact(e.contact.bj.position, block.matDef || Materials.WOOD, Math.abs(relativeVelocity));
 
                 // Shake (if heavy impact)
                 if (Math.abs(relativeVelocity) > 5) {
-                    this.juiceManager.shakeScreen(0.5);
+                    // Simple shake implementation or use camera system later
+                    // this.camera.position.x += Math.random() * 0.5; // very naive
                 }
             }
         });
 
         this.blocks.push(block);
         return block;
+    }
+
+    generateBlockParams() {
+        // Params
+        let scale = { ...this.blockSize };
+
+        // Apply Chaos Mods
+        // Pass 1 to get the multiplier factor
+        const mods = this.disasterManager.modifyNextBlock(scale, 1);
+        scale = mods.scale;
+        const disasterMassMult = mods.mass;
+
+        // Pick Material (Weighted random)
+        let matDef = Materials.WOOD;
+        const rand = Math.random();
+        if (rand > 0.95) matDef = Materials.GLASS;
+        else if (rand > 0.9) matDef = Materials.FOAM;
+        else if (rand > 0.8) matDef = Materials.RUBBER;
+        else if (rand > 0.7) matDef = Materials.ICE;
+        else if (rand > 0.6) matDef = Materials.STEEL;
+
+        // Calculate Mass from Density
+        const volume = scale.x * this.blockHeight * scale.z;
+        let finalMass = volume * matDef.density * disasterMassMult;
+
+        // Color cycle
+        this.hue += 0.05;
+        if (this.hue > 1) this.hue = 0;
+
+        return {
+            scale,
+            matDef,
+            mass: finalMass,
+            color: new THREE.Color(matDef.color)
+        };
     }
 
     spawnNextBlock() {
@@ -203,40 +309,32 @@ export class Game {
             this.disasterManager.triggerRandomEvent();
         }
 
-        // Params
-        let scale = { ...this.blockSize };
-        let mass = 5;
+        // Ensure we have a next block
+        if (!this.nextBlockParams) this.nextBlockParams = this.generateBlockParams();
 
-        // Apply Chaos Mods
-        const mods = this.disasterManager.modifyNextBlock(scale, mass);
-        scale = mods.scale;
-        mass = mods.mass;
+        // Spawn it
+        this.spawnBlockFromParams(this.nextBlockParams);
 
+        // Generate new next
+        this.nextBlockParams = this.generateBlockParams();
+        this.updatePreviews();
+
+        this.canHold = true;
+    }
+
+    spawnBlockFromParams(params) {
         const y = (this.blocks.length * this.blockHeight) + 4;
 
-        // Color cycle
-        this.hue += 0.05;
-        if (this.hue > 1) this.hue = 0;
-
-        // Pick Material (Random or based on level)
-        let matDef = Materials.WOOD;
-        const rand = Math.random();
-        if (rand > 0.9) matDef = Materials.RUBBER;
-        else if (rand > 0.8) matDef = Materials.ICE;
-        else if (rand > 0.7) matDef = Materials.STEEL;
-
-        // Force heavy event override
-        let finalMass = mass * matDef.massMult;
-
-        // Spawn
+        // Spawn Coords
         const axis = this.score % 2 === 0 ? 'x' : 'z';
         const spawnX = axis === 'x' ? -10 : 0;
         const spawnZ = axis === 'z' ? -10 : 0;
 
         // Create
-        const block = this.createBlock(spawnX, y, spawnZ, scale.x, this.blockHeight, scale.z, 0, new THREE.Color(matDef.color));
-        block.body.material = this.materialMap[matDef.name];
-        block.matDef = matDef; // Store for later
+        const block = this.createBlock(spawnX, y, spawnZ, params.scale.x, this.blockHeight, params.scale.z, 0, params.matDef);
+        block.body.material = this.materialMap[params.matDef.name];
+        block.matDef = params.matDef;
+        block.params = params; // store for hold
 
         this.currentBlock = block;
         this.currentBlock.oscillate = {
@@ -247,12 +345,69 @@ export class Game {
         };
 
         // Mass for later
-        this.currentBlock.targetMass = finalMass;
+        this.currentBlock.targetMass = params.mass;
+    }
+
+    updatePreviews() {
+        const nextEl = document.getElementById('next-block-preview');
+        if (nextEl && this.nextBlockParams) {
+            nextEl.style.backgroundColor = '#' + this.nextBlockParams.matDef.color.toString(16);
+            nextEl.innerHTML = ""; // Clear
+            // Tooltip title?
+            nextEl.title = this.nextBlockParams.matDef.name;
+        }
+
+        const holdEl = document.getElementById('hold-block-preview');
+        if (holdEl) {
+            if (this.holdBlockParams) {
+                holdEl.style.backgroundColor = '#' + this.holdBlockParams.matDef.color.toString(16);
+                holdEl.title = this.holdBlockParams.matDef.name;
+            } else {
+                holdEl.style.backgroundColor = 'transparent';
+                holdEl.title = "Empty";
+            }
+        }
+    }
+
+    holdBlock() {
+        if (!this.canHold || !this.currentBlock || !this.currentBlock.oscillate) return;
+
+        this.canHold = false;
+        const currentParams = this.currentBlock.params;
+
+        // Destroy current
+        this.world.removeBody(this.currentBlock.body);
+        this.scene.remove(this.currentBlock.mesh);
+        this.blocks.pop(); // Remove from tracking
+
+        // Undo score
+        this.score--;
+
+        if (this.holdBlockParams) {
+            // Swap
+            const temp = this.holdBlockParams;
+            this.holdBlockParams = currentParams;
+
+            // Backup next
+            const realNext = this.nextBlockParams;
+            this.nextBlockParams = temp;
+            this.spawnNextBlock();
+            this.nextBlockParams = realNext; // Restore real next
+            this.updatePreviews();
+
+        } else {
+            // Store and Spawn Next
+            this.holdBlockParams = currentParams;
+            this.spawnNextBlock();
+        }
+
+        this.canHold = false;
     }
 
     startGame() {
         this.setScreen('game');
         this.gameState = 'PLAYING';
+        this.scoreSystem.reset();
         this.score = 0;
         this.resetScene();
         this.spawnNextBlock();
@@ -304,36 +459,39 @@ export class Game {
         const prevPos = prevBlock ? prevBlock.body.position : new CANNON.Vec3(0, 0, 0);
         const currentPos = this.currentBlock.body.position;
 
+        // Score & Combo via System
         const dist = osAxis === 'x'
             ? Math.abs(prevPos.x - currentPos.x)
             : Math.abs(prevPos.z - currentPos.z);
 
-        if (dist < 0.5) {
-            this.comboStreak++;
-            this.showComboText();
-            this.juiceManager.playThud(this.comboStreak + 2);
+        const result = this.scoreSystem.registerDrop(dist);
+        this.uiScore.innerText = result.totalScore;
 
-            if (this.comboStreak >= 3) {
-                // Safety net? Or just bonus points?
-                this.score += 5; // Bonus
-                this.uiScore.innerText = this.score;
-            }
+        // Feedback
+        this.showPlacementFeedback(result);
+
+        // Juice
+        if (result.placement.name === 'PERFECT') {
+            this.audioSystem.playSuccess(result.combo);
+            this.particleSystem.emitSuccess(this.currentBlock.mesh.position);
         } else {
-            this.comboStreak = 0;
+            this.audioSystem.playImpact(this.currentBlock.matDef, 5); // Simple thud
         }
 
         this.checkStability();
     }
 
-    showComboText() {
+    showPlacementFeedback(result) {
         const el = document.getElementById('combo-text');
         if (el) {
-            el.innerText = `PERFECT! x${this.comboStreak}`;
+            let text = result.placement.text;
+            if (result.combo > 1) text += ` x${result.combo}`;
+
+            el.innerText = text;
+            el.style.color = result.placement.color;
             el.style.opacity = '1';
             el.style.transform = 'translate(-50%, -50%) scale(1.5)';
             gsap.to(el.style, { opacity: 0, scale: 1, duration: 1, ease: "power2.out" });
-        } else {
-            // Create lazily if not exists (though better to have in HTML)
         }
     }
 
@@ -401,7 +559,7 @@ export class Game {
     }
 
     updatePhysics(dt) {
-        this.world.step(this.timeStep, dt, 3);
+        this.world.step(this.timeStep, dt * this.timeScale, 3);
 
         let fallenCount = 0;
 
@@ -427,7 +585,10 @@ export class Game {
         this.disasterManager.update(dt);
     }
 
-    updateGameLogic(time) {
+    updateGameLogic(time, dt) {
+        // Particles
+        if (this.particleSystem) this.particleSystem.update(dt);
+
         // Oscillate current block
         if (this.currentBlock && this.currentBlock.oscillate) {
             const os = this.currentBlock.oscillate;
@@ -465,6 +626,7 @@ export class Game {
         this.camera.aspect = window.innerWidth / window.innerHeight;
         this.camera.updateProjectionMatrix();
         this.renderer.setSize(window.innerWidth, window.innerHeight);
+        if (this.postProcessing) this.postProcessing.setSize(window.innerWidth, window.innerHeight);
     }
 
     loop(time) {
@@ -473,8 +635,12 @@ export class Game {
         this.lastCallTime = time;
 
         this.updatePhysics(dt);
-        this.updateGameLogic(time);
+        this.updateGameLogic(time, dt);
 
-        this.renderer.render(this.scene, this.camera);
+        if (this.postProcessing) {
+            this.postProcessing.render(dt);
+        } else {
+            this.renderer.render(this.scene, this.camera);
+        }
     }
 }

@@ -11,6 +11,8 @@ export class DisasterManager {
             { id: 'earthquake', name: 'EARTHQUAKE', desc: 'Hold on tight!' },
             { id: 'tiny', name: 'TINY', desc: 'Precision mode activated!' },
             { id: 'gravity', name: 'HIGH GRAVITY', desc: 'Everything is heavier!' },
+            { id: 'reverse_gravity', name: 'UPSIDE DOWN', desc: 'Gravity Reversed!' },
+            { id: 'time_slow', name: 'MATRIX MODE', desc: 'Time Slows Down!' },
             { id: 'glitch', name: 'GLITCH', desc: 'Controls Inverted!' },
             { id: 'shrink', name: 'SUDDEN DEATH', desc: 'The base is shrinking!' }
         ];
@@ -52,6 +54,10 @@ export class DisasterManager {
     }
 
     applyEventStart(type) {
+        // Warning Pulse
+        document.body.classList.add('warning-pulse');
+        setTimeout(() => document.body.classList.remove('warning-pulse'), 3000);
+
         if (type === 'earthquake') {
             document.body.classList.add('shake');
             setTimeout(() => document.body.classList.remove('shake'), 2000);
@@ -68,7 +74,22 @@ export class DisasterManager {
             this.game.world.gravity.set(0, -40, 0);
             setTimeout(() => {
                 this.game.world.gravity.set(0, -20, 0); // Reset
-            }, 10000); // 10 seconds of high gravity
+            }, 10000);
+        }
+
+        if (type === 'reverse_gravity') {
+            this.game.world.gravity.set(0, 10, 0); // Upwards
+            this.game.audioSystem.playThud(0.5); // Low freq warning
+            setTimeout(() => {
+                this.game.world.gravity.set(0, -20, 0);
+            }, 5000);
+        }
+
+        if (type === 'time_slow') {
+            gsap.to(this.game, { timeScale: 0.2, duration: 0.5 });
+            setTimeout(() => {
+                gsap.to(this.game, { timeScale: 1.0, duration: 1.0 });
+            }, 5000);
         }
 
         if (type === 'shrink') {
