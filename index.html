@@ -12,9 +12,22 @@
 <body>
   <div id="ui-layer">
     <div id="start-screen" class="screen active">
-      <h1 class="title">P-STACKER</h1>
-      <p class="subtitle">The Unlicensed Civil Engineer</p>
-      <button id="start-btn" class="btn primary">Start Construction</button>
+      <div class="content-wrapper">
+        <h1 class="title">P-STACKER</h1>
+        <p class="subtitle">The Unlicensed Civil Engineer</p>
+
+        <div class="tutorial-box">
+          <h3>How to Play</h3>
+          <ul class="instructions-list">
+            <li><span class="key-icon">Click</span> or <span class="key-icon">Space</span> to Drop Blocks</li>
+            <li>Stack blocks as high as possible</li>
+            <li>Center drops for <span class="highlight">Perfect</span> bonuses</li>
+            <li>Press <span class="key-icon">H</span> to Hold/Swap blocks</li>
+          </ul>
+        </div>
+
+        <button id="start-btn" class="btn primary">Start Construction</button>
+      </div>
     </div>
 
     <div id="game-ui" class="screen">
@@ -40,6 +53,10 @@
         </div>
       </div>
 
+      <div class="hud-bottom-left">
+        <p class="controls-hint">Space/Click to Drop • H to Hold</p>
+      </div>
+
       <div id="chaos-announcement" class="chaos-popup hidden">
         <h2 id="chaos-title">EARTHQUAKE!</h2>
         <p id="chaos-desc">The ground is shaking!</p>
@@ -52,6 +69,7 @@
         <p>Floors Built: <span id="final-score">0</span></p>
         <p>Max Height: <span id="final-height">0m</span></p>
       </div>
+      <!-- Certificate will be injected here -->
       <button id="restart-btn" class="btn primary">Try Again</button>
     </div>
 

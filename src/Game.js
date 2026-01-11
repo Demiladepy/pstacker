@@ -25,8 +25,10 @@ export class Game {
         // Game State
         this.blocks = [];
         this.currentBlock = null;
+        this.currentBlock = null;
         this.stackHeight = 0;
         this.floorCount = 0;
+        this.blockCount = 0;
         this.gameState = 'START';
 
         // Settings
@@ -96,10 +98,7 @@ export class Game {
                     const friction = (matDef.friction + otherDef.friction) / 2;
                     const restitution = (matDef.restitution + otherDef.restitution) / 2;
                     const otherMat = this.materialMap[otherDef.name] || new CANNON.Material(otherDef.name); // Should exist by 2nd pass or lazy
-                    // To avoid duplicates, we could loop carefully, but Cannon handles overwrites or we just do simple Pair?
                     // Let's just do Default contact for now for simplicity, or specific if matches.
-                    // Actually, Cannon needs explicit contacts or falls back to defaults.
-                    // Let's just ensure Self and Default are tuned. Complex interactions can fallback.
                 }
             });
         });
@@ -108,13 +107,11 @@ export class Game {
     setupGraphics() {
         this.scene = new THREE.Scene();
 
-        // Init Particles now that scene exists? Or just init in init()?
         // I initialized in constructor but scene was null. I must move initialization to init() or here.
         if (!this.particleSystem) this.particleSystem = new ParticleSystem(this.scene);
 
-        this.scene.background = new THREE.Color(0x1a1a2e);
-        this.scene.background = new THREE.Color(0x1a1a2e);
-        this.scene.fog = new THREE.Fog(0x1a1a2e, 20, 80);
+        // Background handled by CSS for better gradients
+        this.scene.fog = new THREE.Fog(0x0b0b15, 20, 90);
 
         this.camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
         this.camera.position.set(20, 20, 20);
@@ -130,10 +127,10 @@ export class Game {
     }
 
     setupLights() {
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
         this.scene.add(ambientLight);
 
-        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
         dirLight.position.set(10, 30, 20);
         dirLight.castShadow = true;
         dirLight.shadow.mapSize.width = 2048;
@@ -173,7 +170,13 @@ export class Game {
 
         // Key listeners for tools/hold
         document.addEventListener('keydown', (e) => {
+            if (this.gameState !== 'PLAYING') return;
+
             if (e.key.toLowerCase() === 'h') this.holdBlock();
+            if (e.code === 'Space' || e.code === 'Enter') {
+                if (e.code === 'Space') e.preventDefault(); // Prevent scrolling
+                this.handleInput(e);
+            }
         });
     }
 
@@ -328,13 +331,12 @@ export class Game {
     }
 
     spawnNextBlock() {
-        this.score++;
-        this.uiScore.innerText = this.score;
-        this.uiHeight.innerText = (this.score * this.blockHeight) + 'm';
+        this.blockCount++;
+        // NOTE: uiScore corresponds to points, uiFloor to height. Don't overwrite here.
 
         // Chaos Check (Every 5th block, start warning at 4?)
         this.disasterManager.clear();
-        if (this.score > 0 && this.score % 5 === 0) {
+        if (this.blockCount > 0 && this.blockCount % 5 === 0) {
             this.disasterManager.triggerRandomEvent();
         }
 
@@ -355,7 +357,7 @@ export class Game {
         const y = (this.blocks.length * this.blockHeight) + 4;
 
         // Spawn Coords
-        const axis = this.score % 2 === 0 ? 'x' : 'z';
+        const axis = this.blockCount % 2 === 0 ? 'x' : 'z';
         const spawnX = axis === 'x' ? -10 : 0;
         const spawnZ = axis === 'z' ? -10 : 0;
 
@@ -369,7 +371,7 @@ export class Game {
         this.currentBlock.oscillate = {
             axis: axis,
             time: 0,
-            speed: 3 + (this.score * 0.2), // Get faster
+            speed: 3 + (this.blockCount * 0.2), // Get faster
             range: 8
         };
 
@@ -434,10 +436,16 @@ export class Game {
     }
 
     startGame() {
+        this.startBtn.blur();
+        this.restartBtn.blur();
         this.setScreen('game');
+        this.gameState = 'PLAYING';
         this.gameState = 'PLAYING';
         this.scoreSystem.reset();
         this.floorCount = 0;
+        this.blockCount = 0;
+        this.uiScore.innerText = "0";
+        this.uiFloor.innerText = "0";
         this.resetScene();
         this.spawnNextBlock();
 
@@ -498,6 +506,13 @@ export class Game {
 
         const result = this.scoreSystem.registerDrop(dist);
         this.uiScore.innerText = result.totalScore;
+
+        // Assuming successful drop increments floors?
+        if (result.placement.name !== 'MISS') {
+            this.floorCount++;
+            this.uiFloor.innerText = this.floorCount;
+        }
+
         this.comboStreak = result.combo; // Update combo state for effects
 
         // Feedback
